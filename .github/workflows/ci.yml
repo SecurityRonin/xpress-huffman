@@ -48,8 +48,16 @@ jobs:
       - uses: taiki-e/install-action@cargo-llvm-cov
       - name: Gate on 100% line coverage (excluding // cov:unreachable)
         run: |
-          cargo llvm-cov --all-features --lcov --output-path lcov.info
-          uncovered=$(grep -E '^DA:[0-9]+,0$' lcov.info || true)
-          if [ -n "$uncovered" ]; then
-            echo "Uncovered lines found:"; echo "$uncovered"; exit 1
-          fi
+          cargo llvm-cov --all-features --lib --lcov --output-path lcov.info
+          # Fail on any DA:<line>,0 whose source line lacks a `// cov:unreachable`
+          # marker (the fleet defence-in-depth exemption).
+          fail=0
+          while IFS= read -r entry; do
+            line="${entry#DA:}"; line="${line%,0}"
+            src=$(sed -n "${line}p" src/lib.rs)
+            case "$src" in
+              *cov:unreachable*) ;;
+              *) echo "Uncovered (no cov:unreachable): src/lib.rs:${line}: ${src}"; fail=1 ;;
+            esac
+          done < <(grep -E '^DA:[0-9]+,0$' lcov.info || true)
+          exit $fail
