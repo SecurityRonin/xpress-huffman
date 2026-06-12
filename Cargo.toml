@@ -1,0 +1,38 @@
+[package]
+name = "xpress-huffman"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Pure-Rust, panic-free decompressor for Microsoft Xpress-Huffman ([MS-XCA] §2.2.4, LZXPRESS_HUFFMAN) — the codec behind Win10+ prefetch (MAM), hiberfil.sys, SMB3 and registry-hive compression. Cross-platform, no Windows API."
+license = "Apache-2.0"
+authors = ["Albert Hui <albert@securityronin.com>"]
+keywords = ["xpress", "compression", "windows", "forensics", "ms-xca"]
+categories = ["compression", "parser-implementations", "no-std"]
+repository = "https://github.com/SecurityRonin/xpress-huffman"
+documentation = "https://docs.rs/xpress-huffman"
+readme = "README.md"
+exclude = ["fuzz/", "docs/"]
+
+[features]
+default = []
+# Implement `std::error::Error` for `Error` (off by default; the crate is no_std).
+std = []
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all                      = { level = "warn", priority = -1 }
+pedantic                 = { level = "warn", priority = -1 }
+correctness              = { level = "deny",  priority = -1 }
+suspicious               = { level = "deny",  priority = -1 }
+unwrap_used              = { level = "deny",  priority = 0 }
+expect_used              = { level = "deny",  priority = 0 }
+module_name_repetitions  = { level = "allow", priority = 1 }
+must_use_candidate       = { level = "allow", priority = 1 }
+missing_errors_doc       = { level = "allow", priority = 1 }
+missing_panics_doc       = { level = "allow", priority = 1 }
+cast_possible_truncation = { level = "allow", priority = 1 }
+cast_possible_wrap       = { level = "allow", priority = 1 }
+cast_sign_loss           = { level = "allow", priority = 1 }
+cast_precision_loss      = { level = "allow", priority = 1 }
