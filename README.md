@@ -24,11 +24,11 @@ That's the whole surface: one function, no setup, `#![no_std]`-compatible.
 
 Modern Windows compresses a *lot* with Xpress-Huffman (`COMPRESSION_FORMAT_XPRESS_HUFF`, value 4): Win8.1+ **Prefetch** (the `MAM` wrapper), **`hiberfil.sys`**, **SMB3** transport compression, **registry hive** compression, and Windows Update payloads. Decoding it off-Windows usually means shelling out to `RtlDecompressBufferEx` — which only exists on Windows.
 
-| | Algorithm | Decodes off-Windows? |
-|---|---|---|
-| **`xpress-huffman` (this crate)** | Xpress-**Huffman** ([MS-XCA] §2.2.4) | ✅ pure Rust, any platform |
-| `rust-lzxpress`, `xpress_rs` | plain LZXpress (`COMPRESSION_FORMAT_XPRESS` = 3) | ✅ — but *not the Huffman variant* |
-| `RtlDecompressBufferEx` (Windows API) | both | ❌ Windows only |
+| | Algorithm | Xpress-**Huffman** support? | Decodes off-Windows? |
+|---|---|---|---|
+| **`xpress-huffman` (this crate)** | Xpress-**Huffman** ([MS-XCA] §2.2.4) | ✅ | ✅ pure Rust, any platform |
+| `rust-lzxpress`, `xpress_rs` | plain LZXpress (`COMPRESSION_FORMAT_XPRESS` = 3) | ❌ format 3 only | ✅ |
+| `RtlDecompressBufferEx` (Windows API) | both | ✅ | ❌ Windows only |
 
 The existing Rust crates implement *plain* LZXpress (the `LZNT`-style LZ77 format, value 3). This crate implements the **Huffman-coded** variant (value 4) that the artifacts above actually use.
 
