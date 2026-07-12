@@ -1,6 +1,6 @@
 [package]
 name = "xpress-huffman"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 rust-version = "1.85"
 description = "Pure-Rust, panic-free decompressor for Microsoft Xpress-Huffman ([MS-XCA] §2.2.4, LZXPRESS_HUFFMAN) — the codec behind Win10+ prefetch (MAM), hiberfil.sys, SMB3 and registry-hive compression. Cross-platform, no Windows API."

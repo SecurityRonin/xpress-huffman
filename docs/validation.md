@@ -62,4 +62,24 @@ print("dissect == expected:", out == exp,
 PY
 ```
 
+## Robustness (fuzzing)
+
+The decompressor parses fully attacker-controlled bytes, so correctness on
+well-formed input is only half the story — it must never panic, abort, or
+over-allocate on hostile input. A `cargo-fuzz` / libFuzzer target
+(`fuzz/fuzz_targets/decompress.rs`) feeds arbitrary bytes to `decompress` with a
+capped output-size hint and asserts the invariant *"every input yields `Ok` or a
+typed `Err`, never a panic."* Every length, offset, and Huffman-table field read
+from the stream is bounds-checked; back-references before the output start and
+truncated tables return `BadMatchOffset` / `TruncatedTable`.
+
+`ci.yml` compiles the target on every push (`cargo +nightly fuzz check`);
+`fuzz.yml` runs a bounded campaign weekly and on demand, uploading the evolved
+corpus and any crash artifact. A local smoke run of ~18k executions (seeded with
+the real vectors above) produced no crash.
+
+This static/dynamic pairing is backed by the lint posture:
+`#![forbid(unsafe_code)]` plus `clippy::unwrap_used` / `expect_used` denied in
+production code, so no unchecked panic path can be introduced.
+
 [MS-XCA]: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-xca/

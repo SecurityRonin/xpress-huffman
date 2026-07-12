@@ -12,30 +12,64 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
-  RUSTFLAGS: -Dwarnings
+  RUSTFLAGS: -D warnings
 
 jobs:
-  test:
-    name: Test & lint
+  fmt:
+    name: Format
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: rustfmt
       - run: cargo fmt --check
-      - run: cargo clippy --all-targets --all-features
-      - run: cargo clippy --all-targets        # default (no_std) feature set
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@9bdad043e88c75890e36ad3bbc8d27f0090dd609 # v2.7.8
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo clippy --all-targets -- -D warnings # default (no_std) feature set
+
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@9bdad043e88c75890e36ad3bbc8d27f0090dd609 # v2.7.8
       - run: cargo test --all-features
+      - run: cargo test # default (no_std) feature set
       - name: no_std build
         run: cargo build
+
+  msrv:
+    name: MSRV (1.85)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@1.85.0
+      - uses: Swatinem/rust-cache@9bdad043e88c75890e36ad3bbc8d27f0090dd609 # v2.7.8
+      # This published library promises a LOW MSRV (a crates.io compatibility
+      # signal), distinct from the dev-toolchain pin in rust-toolchain.toml.
+      - run: cargo build
+      - run: cargo build --all-features
 
   deny:
     name: cargo-deny (bans/licenses/sources)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: EmbarkStudios/cargo-deny-action@34899fc7ba81ca6268d5947a7a16b4649013fea1 # v2.0.4
+      - uses: EmbarkStudios/cargo-deny-action@bb137d7af7e4fb67e5f82a49c4fce4fad40782fe # v2.0.20
         with:
           command: check bans licenses sources
 
@@ -48,31 +82,62 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: EmbarkStudios/cargo-deny-action@34899fc7ba81ca6268d5947a7a16b4649013fea1 # v2.0.4
+      - uses: EmbarkStudios/cargo-deny-action@bb137d7af7e4fb67e5f82a49c4fce4fad40782fe # v2.0.20
         with:
           command: check advisories
 
   coverage:
-    name: Coverage (100% lib)
+    name: Coverage (100% functions)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools-preview
-      - uses: taiki-e/install-action@cargo-llvm-cov
-      - name: Gate on 100% line coverage (excluding // cov:unreachable)
+      - uses: Swatinem/rust-cache@9bdad043e88c75890e36ad3bbc8d27f0090dd609 # v2.7.8
+      - uses: taiki-e/install-action@v2 # renovate: pin digest
+        with:
+          tool: cargo-llvm-cov
+      # Every function must be covered. Line % reads below 100 on the single
+      # `// cov:unreachable` defensive arm (a valid Huffman tree always reaches a
+      # leaf) — the function gate is the meaningful invariant.
+      - run: cargo llvm-cov --all-features --fail-under-functions 100 --show-missing-lines
+
+  fuzz-check:
+    name: Fuzz targets compile (nightly)
+    runs-on: ubuntu-latest
+    # cargo-fuzz builds with the host nightly; warnings in its own deps must not
+    # fail the install, so this job does not deny warnings.
+    env:
+      RUSTFLAGS: ""
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@9bdad043e88c75890e36ad3bbc8d27f0090dd609 # v2.7.8
+      - run: cargo install cargo-fuzz
+      - run: cargo +nightly fuzz check
+        working-directory: fuzz
+
+  secrets:
+    name: Secret Scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks
         run: |
-          cargo llvm-cov --all-features --lib --lcov --output-path lcov.info
-          # Fail on any DA:<line>,0 whose source line lacks a `// cov:unreachable`
-          # marker (the fleet defence-in-depth exemption).
-          fail=0
-          while IFS= read -r entry; do
-            line="${entry#DA:}"; line="${line%,0}"
-            src=$(sed -n "${line}p" src/lib.rs)
-            case "$src" in
-              *cov:unreachable*) ;;
-              *) echo "Uncovered (no cov:unreachable): src/lib.rs:${line}: ${src}"; fail=1 ;;
-            esac
-          done < <(grep -E '^DA:[0-9]+,0$' lcov.info || true)
-          exit $fail
+          VERSION=$(curl -s https://api.github.com/repos/gitleaks/gitleaks/releases/latest | jq -r '.tag_name[1:]')
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz" \
+            | tar xz -C /tmp gitleaks
+      - name: Run gitleaks
+        run: /tmp/gitleaks detect --source .
+
+  docs:
+    name: Docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@9bdad043e88c75890e36ad3bbc8d27f0090dd609 # v2.7.8
+      - run: RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features

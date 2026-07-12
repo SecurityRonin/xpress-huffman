@@ -1,0 +1,18 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "rangeStrategy": "bump",
+  "lockFileMaintenance": { "enabled": true },
+  "packageRules": [
+    {
+      "matchManagers": ["cargo"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "cargo minor/patch"
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "groupName": "github-actions",
+      "pinDigests": true
+    }
+  ]
+}
