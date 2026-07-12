@@ -1,0 +1,29 @@
+# Pre-commit ⇄ CI parity: the same fmt / clippy / secret-scan checks CI enforces
+# run here locally, so a green commit is a green pipeline.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+
+  - repo: https://github.com/doublify/pre-commit-rust
+    rev: v1.0
+    hooks:
+      - id: fmt
+      - id: clippy
+        args: ["--all-targets", "--all-features", "--", "-D", "warnings"]
+
+  # Secret scan — mirrors the CI `gitleaks detect --source .` job. A local hook
+  # runs the identical command against the installed gitleaks binary rather than
+  # pinning an external rev, keeping the two in lock-step.
+  - repo: local
+    hooks:
+      - id: gitleaks
+        name: gitleaks (secret scan)
+        entry: gitleaks detect --source . --no-banner
+        language: system
+        pass_filenames: false
