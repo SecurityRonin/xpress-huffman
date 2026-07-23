@@ -10,7 +10,7 @@
 [![unsafe forbidden](https://img.shields.io/badge/unsafe-forbidden-success.svg)](https://github.com/rust-secure-code/safety-dance/)
 [![Security advisories](https://img.shields.io/badge/security-cargo--deny-success.svg)](deny.toml)
 
-**Decompress Microsoft Xpress-Huffman ([MS-XCA] §2.2.4) anywhere — the codec behind Win10+ prefetch, `hiberfil.sys`, SMB3 and registry-hive compression — in pure, panic-free Rust with no Windows API.**
+**Decompress Microsoft Xpress-Huffman ([MS-XCA] §2.2.4) anywhere — the codec behind Win10+ prefetch, `hiberfil.sys`, SMB3 and registry-hive compression — in pure, fuzzed, panic-free-by-lint Rust with no Windows API.**
 
 ```rust
 // `compressed` is an LZXPRESS_HUFFMAN stream (e.g. a prefetch MAM payload after
