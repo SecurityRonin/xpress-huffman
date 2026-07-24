@@ -44,6 +44,11 @@ pub enum Error {
     TruncatedTable,
     /// A back-reference pointed before the start of the output (corrupt stream).
     BadMatchOffset,
+    /// The 256-byte code-length table does not form a valid canonical Huffman
+    /// code — e.g. it over-subscribes (violates the Kraft inequality), so the
+    /// decode tree would need more than the 1023 nodes a valid 512-symbol tree
+    /// can occupy. A valid stream never reaches this; corrupt input does.
+    InvalidHuffmanTable,
 }
 
 impl core::fmt::Display for Error {
@@ -52,6 +57,9 @@ impl core::fmt::Display for Error {
             Error::TruncatedTable => f.write_str("xpress-huffman: truncated Huffman table"),
             Error::BadMatchOffset => {
                 f.write_str("xpress-huffman: match offset before output start")
+            }
+            Error::InvalidHuffmanTable => {
+                f.write_str("xpress-huffman: invalid Huffman code-length table")
             }
         }
     }
@@ -80,7 +88,7 @@ pub fn decompress(compressed: &[u8], decompressed_size: usize) -> Result<Vec<u8>
         let table = compressed
             .get(bs.pos..bs.pos + TABLE_LEN)
             .ok_or(Error::TruncatedTable)?;
-        let tree = build_tree(table);
+        let tree = build_tree(table)?;
         bs.pos += TABLE_LEN;
         bs.init();
 
@@ -132,7 +140,7 @@ const NONE: usize = usize::MAX;
 /// Build the per-block Huffman decode tree from its 256-byte code-length table
 /// (512 symbols, 4 bits each: byte `k` holds symbol `2k` in the low nibble,
 /// `2k+1` in the high nibble). Canonical-code assignment per [MS-XCA].
-fn build_tree(buf: &[u8]) -> Vec<Node> {
+fn build_tree(buf: &[u8]) -> Result<Vec<Node>, Error> {
     let mut nodes = vec![
         Node {
             children: [NONE, NONE],
@@ -158,36 +166,43 @@ fn build_tree(buf: &[u8]) -> Vec<Node> {
     for &(length, symbol) in symbols.iter().take(512).skip(start) {
         let length = u32::from(length);
         {
-            let node = &mut nodes[tree_index];
+            // An over-subscribed table can push tree_index past the 1023 nodes a
+            // valid 512-symbol canonical tree occupies — reject, never index OOB.
+            let node = nodes
+                .get_mut(tree_index)
+                .ok_or(Error::InvalidHuffmanTable)?;
             node.symbol = symbol;
             node.is_leaf = true;
         }
         mask = mask.wrapping_shl(length.wrapping_sub(bits));
         bits = length;
-        tree_index = add_leaf(&mut nodes, tree_index, mask, bits);
+        tree_index =
+            add_leaf(&mut nodes, tree_index, mask, bits).ok_or(Error::InvalidHuffmanTable)?;
         mask = mask.wrapping_add(1);
     }
-    nodes
+    Ok(nodes)
 }
 
 /// Splice leaf node `idx` into the tree along the path described by `mask`/`bits`,
-/// creating internal nodes as needed. Returns the next free node index.
-fn add_leaf(nodes: &mut [Node], idx: usize, mask: u32, bits: u32) -> usize {
+/// creating internal nodes as needed. Returns the next free node index, or `None`
+/// if the path would run past the node arena — the signature that the table
+/// over-subscribes and is not a valid canonical Huffman code.
+fn add_leaf(nodes: &mut [Node], idx: usize, mask: u32, bits: u32) -> Option<usize> {
     let mut cur = 0usize;
     let mut i = idx + 1;
     let mut bits = bits;
     while bits > 1 {
         bits -= 1;
         let childidx = ((mask >> bits) & 1) as usize;
-        if nodes[cur].children[childidx] == NONE {
+        if nodes.get(cur)?.children[childidx] == NONE {
+            nodes.get_mut(i)?.is_leaf = false;
             nodes[cur].children[childidx] = i;
-            nodes[i].is_leaf = false;
             i += 1;
         }
         cur = nodes[cur].children[childidx];
     }
-    nodes[cur].children[(mask & 1) as usize] = idx;
-    i
+    nodes.get_mut(cur)?.children[(mask & 1) as usize] = idx;
+    Some(i)
 }
 
 /// Bit reader over the compressed stream: a 32-bit window refilled 16 bits at a
@@ -377,6 +392,19 @@ mod tests {
     fn error_is_display() {
         assert!(!format!("{}", Error::TruncatedTable).is_empty());
         assert!(!format!("{}", Error::BadMatchOffset).is_empty());
+        assert!(!format!("{}", Error::InvalidHuffmanTable).is_empty());
+    }
+
+    #[test]
+    fn oversubscribed_table_errors() {
+        // Regression for the fuzz-found panic (index out of bounds: len 1024,
+        // index 1024). A table filled with 0xBB assigns all 512 symbols code
+        // length 11 — a degenerate/incomplete code whose canonical decode trie
+        // needs more than the 1023 nodes a valid 512-symbol tree occupies. The
+        // arena overflow must surface as a typed error, never a panic.
+        let mut input = vec![0xBBu8; TABLE_LEN];
+        input.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(decompress(&input, 1 << 20), Err(Error::InvalidHuffmanTable));
     }
 
     // The match-length escalation ladder ([MS-XCA]), unit-tested directly: a full
