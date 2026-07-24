@@ -1,0 +1,10 @@
+
+# cargo-vet imports lock
+
+[audits.bytecode-alliance.audits]
+
+[audits.embark.audits]
+
+[audits.google.audits]
+
+[audits.mozilla.audits]
