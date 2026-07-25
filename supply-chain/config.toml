@@ -17,8 +17,4 @@ url = "https://raw.githubusercontent.com/google/rust-crate-audits/main/audits.to
 url = "https://raw.githubusercontent.com/mozilla/supply-chain/main/audits.toml"
 
 [policy.xpress-huffman]
-audit-as-crates-io = true
-
-[[exemptions.xpress-huffman]]
-version = "0.1.1"
-criteria = "safe-to-deploy"
+audit-as-crates-io = false
