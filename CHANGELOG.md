@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3](https://github.com/SecurityRonin/xpress-huffman/compare/xpress-huffman-v0.1.2...xpress-huffman-v0.1.3) - 2026-08-20
+
+### Fixed
+
+- *(gitignore)* unanchor the target rule so nested cargo projects are ignored
+
 ## [0.1.2](https://github.com/SecurityRonin/xpress-huffman/compare/xpress-huffman-v0.1.1...xpress-huffman-v0.1.2) - 2026-07-25
 
 ### Fixed
