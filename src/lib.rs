@@ -93,9 +93,7 @@ pub fn decompress(compressed: &[u8], decompressed_size: usize) -> Result<Vec<u8>
         bs.init();
 
         let mut produced_in_block = 0usize;
-        while produced_in_block < BLOCK_SIZE
-            && bs.pos < compressed.len()
-            && dst.len() < decompressed_size
+        while produced_in_block < BLOCK_SIZE && bs.has_input_bits() && dst.len() < decompressed_size
         {
             let symbol = bs.decode(&tree);
             if symbol < 256 {
@@ -213,6 +211,8 @@ struct BitStream<'a> {
     pos: usize,
     mask: u32,
     bits: i32,
+    /// Zero bits that `read16` shifted in past the end of the input.
+    pad_bits: i32,
 }
 
 impl<'a> BitStream<'a> {
@@ -222,6 +222,7 @@ impl<'a> BitStream<'a> {
             pos: 0,
             mask: 0,
             bits: 0,
+            pad_bits: 0,
         }
     }
 
@@ -238,10 +239,17 @@ impl<'a> BitStream<'a> {
             ])),
         };
         self.pos += avail.min(2);
+        self.pad_bits += 8 * (2 - avail.min(2)) as i32;
         v
     }
 
+    /// True while the bit buffer still holds bits that came from the input.
+    fn has_input_bits(&self) -> bool {
+        self.bits > self.pad_bits
+    }
+
     fn init(&mut self) {
+        self.pad_bits = 0;
         self.mask = (self.read16() << 16).wrapping_add(self.read16());
         self.bits = 32;
     }
@@ -353,19 +361,40 @@ mod tests {
     #[test]
     fn handles_init_at_exact_eof() {
         // Only 2 bytes after the table: init's second 16-bit read sees 0 bytes
-        // left (EOF → 0). The stream is then exhausted, so the result is empty.
+        // left (EOF → 0). The first 16 bits are real input, so they are decoded:
+        // the first symbol is a match into the empty output → BadMatchOffset.
         let mut input = table_first_symbol_is_match().to_vec();
         input.extend_from_slice(&[0, 0]);
-        assert_eq!(decompress(&input, 100), Ok(Vec::new()));
+        assert_eq!(decompress(&input, 100), Err(Error::BadMatchOffset));
     }
 
     #[test]
     fn handles_init_with_one_trailing_byte() {
         // 3 bytes after the table: init's second 16-bit read sees a single
-        // trailing byte (EOF padding → it becomes the high byte).
+        // trailing byte (EOF padding → it becomes the high byte). The real input
+        // bits still decode to a match into the empty output → BadMatchOffset.
         let mut input = table_first_symbol_is_match().to_vec();
         input.extend_from_slice(&[0, 0, 0]);
-        assert_eq!(decompress(&input, 100), Ok(Vec::new()));
+        assert_eq!(decompress(&input, 100), Err(Error::BadMatchOffset));
+    }
+
+    #[test]
+    fn decodes_symbols_left_in_the_bit_buffer_at_end_of_input() {
+        // All 256 literals get 8-bit codes, so each literal is encoded as its own
+        // byte value, two per 16-bit word. The stream ends exactly with the last
+        // symbol, as Windows writes WOF (CompactOS) chunks. The last symbols are
+        // still in the bit buffer when the input position reaches the end.
+        let data = b"0123456789abcdef";
+        let mut input = vec![0x88u8; TABLE_LEN / 2];
+        input.extend_from_slice(&[0u8; TABLE_LEN / 2]);
+        for pair in data.chunks(2) {
+            let word = (u16::from(pair[0]) << 8) | u16::from(pair[1]);
+            input.extend_from_slice(&word.to_le_bytes());
+        }
+        assert_eq!(decompress(&input, data.len()), Ok(data.to_vec()));
+        // A truncated stream still stops once the real input bits are used up.
+        let short = decompress(&input[..input.len() - 2], data.len()).unwrap();
+        assert_eq!(short, &data[..data.len() - 2]);
     }
 
     #[test]
